@@ -11,11 +11,17 @@
 #define MIN_A2D         0
 #define MAX_A2D         1023
 
-#define ARM_ROT_RANGE   216   // measured in degrees
+#define ARM_ROT_RANGE   216     // measured in degrees
 #define ARM_MIN_ANGLE   (-1 * ARM_ROT_RANGE / 2)
 #define ARM_MAX_ANGLE   (ARM_ROT_RANGE / 2)
 
+#define ARM_READ_DELAY  200     // milliseconds
+
 #define ZERO_PIN_IN     A5
+#define ZERO_IN_ACTIVE  LOW
+
+#define DEBUG_PIN_IN    7
+#define DEBUG_IN_ACTIVE LOW
 
 #define LOG_OPEN_SUCCESS 0
 #define LOG_OPEN_ERROR   -1
@@ -24,7 +30,7 @@
 
 typedef struct {
   int   pin;              // connection
-  int   mechMin, mechMax; // measured a2d @ mechanical limits
+  int   mechMin, mechMax; // measured a2d @ each of the mechanical limits
   int   rawPos;           // unadjusted measured position
   int   rawAngle;         // map A2d to an angle
   int   zeroOffset;       // angle offset
@@ -44,11 +50,17 @@ Sd2Card   sdCard;
 SdVolume  sdVolume;
 SdFile    rootFile;
 
-const int sdSelect = 10;
+const int sdSelectPin = 10;
+
 
 void dumpSdCardInfo() {
 
-  Serial.print("Card type:         ");
+  if ( ! (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE)) {
+    return;       // don't display debug information
+  }
+  
+  Serial.println("\nCard -----------------------------");
+  Serial.print("Type:              ");
   switch (sdCard.type()) {
     case SD_CARD_TYPE_SD1:
       Serial.println("SD1");
@@ -63,7 +75,7 @@ void dumpSdCardInfo() {
       break;
 
     default:
-      Serial.println("Unknown cardtype");
+      Serial.println("Unknown card type");
   }
 
   if (!sdVolume.init(sdCard)) {
@@ -81,22 +93,24 @@ void dumpSdCardInfo() {
   Serial.println(sdVolume.blocksPerCluster() * sdVolume.clusterCount());
 
   uint32_t volumesize;
-
-  Serial.print("\nVolume type is:    FAT");
+  
+  Serial.println("\nVolume ---------------------------");
+  Serial.print("Type:              FAT");
   Serial.println(sdVolume.fatType(), DEC);
   volumesize = sdVolume.blocksPerCluster();    // clusters are collections of blocks
   volumesize *= sdVolume.clusterCount();       // we'll have a lot of clusters
   volumesize /= 2;                             // SD card blocks are always 512 bytes (2 blocks are 1KB)
 
-  Serial.print("Volume size (Kb):  ");
-  Serial.println(volumesize);
-  Serial.print("Volume size (Mb):  ");
+  Serial.print("Size:              ");
+  Serial.print(volumesize);
+  Serial.print("Kb - ");
   volumesize /= 1024;
-  Serial.println(volumesize);
-  Serial.print("Volume size (Gb):  ");
-  Serial.println((float)volumesize / 1024.0);
-  
-  Serial.println("\nFiles (name, date and size in bytes): ");
+  Serial.print(volumesize);
+  Serial.print("Mb - ");
+  Serial.print((float)volumesize / 1024.0);
+  Serial.println("Gb");
+
+  Serial.println("\nFiles (name, date, bytes) -------- ");
 
   rootFile.openRoot(sdVolume);
   rootFile.ls(LS_R | LS_DATE | LS_SIZE);
@@ -107,27 +121,35 @@ void dumpSdCardInfo() {
 
 void setup() {
 
+  int debugFlag = 0;
+  
   Serial.begin(115200);
   while ( ! Serial);                    // wait until serial port is initialized
 
   pinMode(ZERO_PIN_IN, INPUT_PULLUP);   // when this pin goes down, we re-zero
+  pinMode(DEBUG_PIN_IN, INPUT_PULLUP);  // when this pin goes down, display debug information
 
-  Serial.print("\nInitializing SD card...");
+  if (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE) {
+    debugFlag = 1;
+  }
+  
+  if (debugFlag) Serial.print("Initializing SD card... ");
 
-  if (!sdCard.init(SPI_HALF_SPEED, sdSelect)) {
-    Serial.println("Initialization failed.");
+  if (!sdCard.init(SPI_HALF_SPEED, sdSelectPin)) {
+    if (debugFlag) Serial.println("Initialization failed.");
     while (1);
   } else {
-    Serial.println("Card detected...\n");
+    if (debugFlag) Serial.println("Card detected.");
     dumpSdCardInfo();
   }
 }
 
 
+/*
 int mapToAngle(int a2dVal) {
 
 }
-
+*/
 
 int append2LogFile(char *filename) {
 
@@ -146,37 +168,50 @@ int append2LogFile(char *filename) {
 
   return(LOG_OPEN_SUCCESS);
 }
+
+
 void loop() {
 
-  int   i;
+  int   i, debugFlag;
   char  buf[10];
 
+  debugFlag = 0;
 
-  if (digitalRead(ZERO_PIN_IN) == HIGH) {   // normal operation
-    Serial.write("H ");
+  if (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE) {
+    debugFlag = 1;
+  }
+  
+  if ( ! (digitalRead(ZERO_PIN_IN) == ZERO_IN_ACTIVE)) {   // normal operation
     
     for (i = 0 ; i < NUM_OF_POTS ; i++) {
-      Serial.write("*");
       
       armPots[i].rawPos   = analogRead(armPots[i].pin);
       armPots[i].rawAngle = map(armPots[i].rawPos, armPots[i].mechMin, armPots[i].mechMax, ARM_MIN_ANGLE, ARM_MAX_ANGLE);
       armPots[i].adjAngle = armPots[i].rawAngle - armPots[i].zeroOffset;
       
-      Serial.write(itoa(armPots[i].rawPos, buf, 10));
-      Serial.write(" (");
- 
-      Serial.write(itoa(armPots[i].mechMin, buf, 10));
-      Serial.write(", ");
-      Serial.write(itoa(armPots[i].mechMax, buf, 10));
-      Serial.write(") ");
-      Serial.write(itoa(armPots[i].zeroOffset, buf, 10));
-      Serial.write(" ");
-      Serial.write(itoa(armPots[i].adjAngle, buf, 10));
-
-      Serial.write("* ");
+      if (debugFlag) {
+        Serial.write("*");
+        Serial.write(itoa(armPots[i].rawPos, buf, 10));
+        Serial.write(" (");
+        Serial.write(itoa(armPots[i].mechMin, buf, 10));
+        Serial.write(", ");
+        Serial.write(itoa(armPots[i].mechMax, buf, 10));
+        Serial.write(") ");
+        Serial.write(itoa(armPots[i].zeroOffset, buf, 10));
+        Serial.write(" ");
+        Serial.write(itoa(armPots[i].adjAngle, buf, 10));
+        Serial.write("* ");
+      }
     }
+
+    if (debugFlag) {
+        Serial.write("\n");
+    }
+    
   } else {
-    Serial.write("L ");                     // arm zeroing (the set of arms zeroed at once)
+    if (debugFlag) {
+      Serial.write("Z\n");                     // arm zeroing (the set of arms are all zeroed at once)
+    }
     
     for (i = 0 ; i < NUM_OF_POTS ; i++) {
       int current, zero;
@@ -187,7 +222,5 @@ void loop() {
     }  
   }
 
-  Serial.write("\n");
-
-  delay(200);
+  delay(ARM_READ_DELAY);
 }
