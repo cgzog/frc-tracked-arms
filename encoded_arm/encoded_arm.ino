@@ -1,10 +1,17 @@
 //  encoded_arm
 //
 //  track the position of and report 4 arm joints independently
+//
+// supports zeroing the arms - arms should be zeroed when all pointing
+// straight up for normal operation
+//
+// debug shunt can be used to pull down pin 7 to disable debug messages
 
+
+#include <SD.h>
 
 #include <SPI.h>
-#include <SD.h>
+
 
 #define NUM_OF_POTS     4
 
@@ -23,8 +30,11 @@
 #define DEBUG_PIN_IN    7
 #define DEBUG_IN_ACTIVE LOW
 
+#define SD_SELECT_PIN   10
+
 #define LOG_OPEN_SUCCESS 0
 #define LOG_OPEN_ERROR   -1
+#define LOG_FILE_NAME   "ARMS.TXT"
 
 
 
@@ -50,7 +60,6 @@ Sd2Card   sdCard;
 SdVolume  sdVolume;
 SdFile    rootFile;
 
-const int sdSelectPin = 10;
 
 
 void dumpSdCardInfo() {
@@ -135,7 +144,7 @@ void setup() {
   
   if (debugFlag) Serial.print("Initializing SD card... ");
 
-  if (!sdCard.init(SPI_HALF_SPEED, sdSelectPin)) {
+  if ( ! sdCard.init(SPI_HALF_SPEED, SD_SELECT_PIN)) {
     if (debugFlag) Serial.println("Initialization failed.");
     while (1);
   } else {
@@ -151,14 +160,20 @@ int mapToAngle(int a2dVal) {
 }
 */
 
-int append2LogFile(char *filename) {
+int append2LogFile(const char *filename, POTS currentInfo[], int num) {
 
+  String record = "";
+  
   File dataFile = SD.open(filename, FILE_WRITE);
 
   if (dataFile) {
-    dataFile.println(filename);
+
+    for (int i= 0 ; i < num ; i++) {
+      record += String(currentInfo[i].adjAngle) + " ";
+    }
+    dataFile.println(record);
     dataFile.close();
-    Serial.println(filename);
+    Serial.println(record);
   } else {
     Serial.print("Error opening \"");
     Serial.print(filename);
@@ -207,6 +222,8 @@ void loop() {
     if (debugFlag) {
         Serial.write("\n");
     }
+
+    append2LogFile(LOG_FILE_NAME, armPots, NUM_OF_POTS);
     
   } else {
     if (debugFlag) {
