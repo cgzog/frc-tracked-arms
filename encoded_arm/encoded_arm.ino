@@ -7,10 +7,8 @@
 //
 // debug shunt can be used to pull down pin 7 to disable debug messages
 
-
-#include <SD.h>
-
 #include <SPI.h>
+#include <SD.h>
 
 
 #define NUM_OF_POTS     4
@@ -22,7 +20,7 @@
 #define ARM_MIN_ANGLE   (-1 * ARM_ROT_RANGE / 2)
 #define ARM_MAX_ANGLE   (ARM_ROT_RANGE / 2)
 
-#define ARM_READ_DELAY  200     // milliseconds
+#define ARM_READ_PACE   200   // milliseconds
 
 #define ZERO_PIN_IN     A5
 #define ZERO_IN_ACTIVE  LOW
@@ -58,17 +56,15 @@ POTS  armPots[NUM_OF_POTS] = {       // shoulder to wrist
 
 Sd2Card   sdCard;
 SdVolume  sdVolume;
-SdFile    rootFile;
+SdFile    sdRoot;
+
+int       debugFlag = 0;
 
 
 
 void dumpSdCardInfo() {
-
-  if ( ! (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE)) {
-    return;       // don't display debug information
-  }
   
-  Serial.println("\nCard -----------------------------");
+  Serial.println("\nCard ------------------------------------------");
   Serial.print("Type:              ");
   switch (sdCard.type()) {
     case SD_CARD_TYPE_SD1:
@@ -103,7 +99,7 @@ void dumpSdCardInfo() {
 
   uint32_t volumesize;
   
-  Serial.println("\nVolume ---------------------------");
+  Serial.println("\nVolume ----------------------------------------");
   Serial.print("Type:              FAT");
   Serial.println(sdVolume.fatType(), DEC);
   volumesize = sdVolume.blocksPerCluster();    // clusters are collections of blocks
@@ -119,61 +115,86 @@ void dumpSdCardInfo() {
   Serial.print((float)volumesize / 1024.0);
   Serial.println("Gb");
 
-  Serial.println("\nFiles (name, date, bytes) -------- ");
+  Serial.println("\nFiles (name, date, bytes) ---------------------");
 
-  rootFile.openRoot(sdVolume);
-  rootFile.ls(LS_R | LS_DATE | LS_SIZE);
-  rootFile.close();
+  sdRoot.openRoot(sdVolume);
+  sdRoot.ls(LS_R | LS_DATE | LS_SIZE);
+  sdRoot.close();
+
+  Serial.println("-----------------------------------------------\n");
 }
 
 
 
 void setup() {
 
-  int debugFlag = 0;
-  
   Serial.begin(115200);
   while ( ! Serial);                    // wait until serial port is initialized
 
   pinMode(ZERO_PIN_IN, INPUT_PULLUP);   // when this pin goes down, we re-zero
   pinMode(DEBUG_PIN_IN, INPUT_PULLUP);  // when this pin goes down, display debug information
 
-  if (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE) {
-    debugFlag = 1;
-  }
-  
-  if (debugFlag) Serial.print("Initializing SD card... ");
+#ifdef  DUMP_SD_CARD_INFO
 
+// if enabled, normal card library through the SD library doesn't work anymore
+ 
   if ( ! sdCard.init(SPI_HALF_SPEED, SD_SELECT_PIN)) {
-    if (debugFlag) Serial.println("Initialization failed.");
+    Serial.println("sdCard initialization failed");
     while (1);
   } else {
-    if (debugFlag) Serial.println("Card detected.");
+    Serial.println("Card detected");
     dumpSdCardInfo();
+  }
+  
+  while (1);    // just keep looping...
+  
+#endif  // DUMP_SD_CARD_INFO
+
+
+  // normal initialization
+
+  if (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE) {
+    debugFlag = 1;
+    Serial.print("Initializing SD card... ");
+  }
+  
+  if ( ! SD.begin(SD_SELECT_PIN)) {
+    if (debugFlag) {
+      Serial.println("SD initialization failed");
+    }
+    while (1);
+  } else {
+    if (debugFlag) {
+      Serial.println("card detected.");
+    }
   }
 }
 
-
-/*
-int mapToAngle(int a2dVal) {
-
-}
-*/
 
 int append2LogFile(const char *filename, POTS currentInfo[], int num) {
 
-  String record = "";
+  String        record = "";
+  unsigned long myTime;
+  char          timeBuff[12];     // enough to hold into single digit billions
   
   File dataFile = SD.open(filename, FILE_WRITE);
 
   if (dataFile) {
 
+    myTime = millis();
+    
+    ltoa(myTime, timeBuff, 10);   // convert current milliseconds to base 10 time
+    record = timeBuff;      // timestamp
+    record += " ";
+    
     for (int i= 0 ; i < num ; i++) {
       record += String(currentInfo[i].adjAngle) + " ";
     }
     dataFile.println(record);
     dataFile.close();
-    Serial.println(record);
+    if (debugFlag) {
+      Serial.println(record);
+    }
   } else {
     Serial.print("Error opening \"");
     Serial.print(filename);
@@ -187,15 +208,11 @@ int append2LogFile(const char *filename, POTS currentInfo[], int num) {
 
 void loop() {
 
-  int   i, debugFlag;
-  char  buf[10];
-
-  debugFlag = 0;
-
-  if (digitalRead(DEBUG_PIN_IN) == DEBUG_IN_ACTIVE) {
-    debugFlag = 1;
-  }
+  int           i;
+  unsigned long currentMillis, readDelay;
   
+  currentMillis = millis();
+    
   if ( ! (digitalRead(ZERO_PIN_IN) == ZERO_IN_ACTIVE)) {   // normal operation
     
     for (i = 0 ; i < NUM_OF_POTS ; i++) {
@@ -204,7 +221,10 @@ void loop() {
       armPots[i].rawAngle = map(armPots[i].rawPos, armPots[i].mechMin, armPots[i].mechMax, ARM_MIN_ANGLE, ARM_MAX_ANGLE);
       armPots[i].adjAngle = armPots[i].rawAngle - armPots[i].zeroOffset;
       
-      if (debugFlag) {
+      if (0) {
+        
+        char          buf[10];
+
         Serial.write("*");
         Serial.write(itoa(armPots[i].rawPos, buf, 10));
         Serial.write(" (");
@@ -219,7 +239,7 @@ void loop() {
       }
     }
 
-    if (debugFlag) {
+    if (0) {
         Serial.write("\n");
     }
 
@@ -239,5 +259,6 @@ void loop() {
     }  
   }
 
-  delay(ARM_READ_DELAY);
+  // calculate the millis used in the current loop and adjust the delay to hit our read pace as cloase as practical
+  delay(ARM_READ_PACE - (millis() - currentMillis));
 }
