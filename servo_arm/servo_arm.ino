@@ -52,6 +52,8 @@ Sd2Card   sdCard;
 SdVolume  sdVolume;
 SdFile    sdRoot;
 
+File      datafile;
+
 int       debugFlag = 0;
 
 
@@ -160,6 +162,11 @@ void setup() {
     }
   }
 
+  // set the initial servo positions - all vertical
+  //
+  // this might not even be needed, we probably could just go directly to the
+  // first position
+  
   int i;
 
   for (i = 0 ; i < NUM_OF_SERVOS ; i++) {
@@ -167,9 +174,24 @@ void setup() {
     armServos[i].servo->write(MID_SERVO_POS + armServos[i].zeroOffset);
     delay(SERVO_DELAY);
   }
+
+  datafile = SD.open(filename, FILE_READ);
+
+  if ( ! datafile) {
+    Serial.print("Cannot open \"");
+    Serial.print(filename);
+    Serial.println("\"");
+
+    while (1);
+  }
 }
 
 void loop() {
+
+// at this point the data file is open - process it line by line
+// extracting the data values:
+//
+// timestamp (in ms) & arms angles for all 4 joints (starting at "shoulder" (base end)
 
  /*
 
