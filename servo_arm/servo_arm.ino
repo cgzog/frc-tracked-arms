@@ -28,7 +28,9 @@
 
 #define LOG_OPEN_SUCCESS 0
 #define LOG_OPEN_ERROR   -1
-#define LOG_FILE_NAME   "ARMS.TXT"
+#define LOG_FILE_NAME   "ARMS.txt"
+
+#define READ_BUF_SIZE   50
 
 
 typedef struct {
@@ -175,16 +177,18 @@ void setup() {
     delay(SERVO_DELAY);
   }
 
-  datafile = SD.open(filename, FILE_READ);
+  datafile = SD.open(LOG_FILE_NAME, FILE_READ);
 
   if ( ! datafile) {
     Serial.print("Cannot open \"");
-    Serial.print(filename);
+    Serial.print(LOG_FILE_NAME);
     Serial.println("\"");
 
     while (1);
   }
 }
+
+
 
 void loop() {
 
@@ -193,6 +197,25 @@ void loop() {
 //
 // timestamp (in ms) & arms angles for all 4 joints (starting at "shoulder" (base end)
 
+  char  readBuf[READ_BUF_SIZE], *readPtr;
+
+  readPtr = readBuf;
+  
+  while (datafile.read(readPtr, 1)) {
+    if (*readPtr < '0' && *readPtr > '9' && *readPtr != ' ') {
+      char  buf[10];
+      Serial.print("<");
+      Serial.print(itoa(*readPtr, buf, 16));
+      Serial.print(">");
+    } else {
+      Serial.print(*readPtr);
+    }
+  }
+
+  Serial.println("<EOF>");
+
+  while (1);
+  
  /*
 
   for (pos = 0; pos <= 180; pos += 1) { // goes from 0 degrees to 180 degrees
