@@ -32,6 +32,9 @@
 
 #define READ_BUF_SIZE   50
 
+#define READ_OK         1
+#define READ_ERROR      0
+
 
 typedef struct {
   int   pin;          // connection
@@ -190,18 +193,29 @@ void setup() {
 
 
 
-void loop() {
-
-// at this point the data file is open - process it line by line
-// extracting the data values:
+// readRecord   get a line from the data file and parse the fields:
 //
-// timestamp (in ms) & arms angles for all 4 joints (starting at "shoulder" (base end)
+// timestamp arms angle (4 - shoulder to end)
+
+int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
 
   char  readBuf[READ_BUF_SIZE], *readPtr;
+  int   readOK;
 
   readPtr = readBuf;
   
-  while (datafile.read(readPtr, 1)) {
+  while (readOK = datafile.read(readPtr, 1)) {
+
+    //  skip carriage return
+    if (*readPtr == '\r') {
+      continue;
+    }
+
+    // newline ends the reading of the line
+    if (*readPtr == '\n') {
+      break;
+    }
+    
     if (*readPtr < '0' && *readPtr > '9' && *readPtr != ' ') {
       char  buf[10];
       Serial.print("<");
@@ -210,9 +224,75 @@ void loop() {
     } else {
       Serial.print(*readPtr);
     }
+    readPtr++;
   }
 
-  Serial.println("<EOF>");
+  if ( ! readOK) {
+    if (debugFlag) {
+      Serial.println("<EOF>");
+    }
+    return(READ_ERROR);
+    
+  } else {
+    
+    if (debugFlag) {
+      Serial.print("Read line >");
+      Serial.print(readBuf);
+      Serial.println("<");
+    }
+  }
+
+  // we've read a line - now break it down
+
+  // timestamp
+
+  *timeStamp = atol(readBuf);
+
+  if (debugFlag) {
+    Serial.print("timestamp: ");
+    Serial.println(*timeStamp);
+    Serial.println("angles:");
+  }
+
+  // process the angle values
+
+  readPtr = readBuf;
+
+  int i;
+  
+  for (i = 0 ; i < numOfAngles ; i++) {
+
+    // skip the just processed numeric value and the subsequent white space
+    Serial.print("1:"); Serial.println(readPtr);
+    while (isdigit(*readPtr++));
+    Serial.print("2:"); Serial.println(readPtr);
+    while (isspace(*readPtr++));
+    Serial.print("3:"); Serial.println(readPtr);
+
+    angles[i] = atoi(readPtr);
+    
+    if (debugFlag) {
+      Serial.println(angles[i]);
+    }
+  }
+
+  return(READ_OK);
+}
+
+void loop() {
+
+  unsigned long timestamp, now;
+  int angles[NUM_OF_SERVOS];
+  
+  // at this point the data file is open - process it line by line
+  // extracting the data values:
+  //
+  // timestamp (in ms) & arms angles for all 4 joints (starting at "shoulder" (base end)
+
+  while (readRecord(&timestamp, angles, NUM_OF_SERVOS)) {
+    now = millis();
+        
+  }
 
   while (1);
   
