@@ -196,6 +196,8 @@ void setup() {
 // readRecord   get a line from the data file and parse the fields:
 //
 // timestamp arms angle (4 - shoulder to end)
+//
+// comment lines start with '#' in first column
 
 int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
 
@@ -204,21 +206,23 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
 
   readPtr = readBuf;
   
-  while (readOK = datafile.read(readPtr, 1)) {
+  do {
+    while (readOK = datafile.read(readPtr, 1)) {
 
-    //  skip carriage return
-    if (*readPtr == '\r') {
-      continue;     // don't advance readPtr so '\r' will be overwritten
-    }
+      //  skip carriage return
+      if (*readPtr == '\r') {
+        continue;     // don't advance readPtr so '\r' will be overwritten
+      }
 
-    // newline ends the reading of the line
-    if (*readPtr == '\n') {
-      *readPtr = '\0';    // terminate the read string
-      break;
-    }
+      // newline ends the reading of the line
+      if (*readPtr == '\n') {
+        *readPtr = '\0';    // terminate the read string
+        break;
+      }
     
-    readPtr++;
-  }
+      readPtr++;
+    }
+  } while (readOK && readBuf[0] == '#');  // skip comment lines
 
   if ( ! readOK) {
     if (debugFlag) {
@@ -252,7 +256,7 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
   for (i = 0 ; i < numOfAngles ; i++) {
 
     // skip the just processed numeric value and the subsequent white space
-    while (isdigit(*readPtr)) {
+    while (isdigit(*readPtr) || *readPtr == '-') {    // be sure to handle minus signs!
       readPtr++;
     }
 
@@ -284,6 +288,7 @@ void loop() {
   
   while (readRecord(&timestamp, angles, NUM_OF_SERVOS)) {
 
+    /* 
     prevTime = timestamp;
     
     if ( ! currentTime) {
@@ -298,11 +303,12 @@ void loop() {
       currentTime = millis();
       delay(timestamp - currentTime);
     }
+    */
     
     for (i = 0 ; i < NUM_OF_SERVOS ; i++) {
       armServos[i].servo->write(MID_SERVO_POS - angles[i]);
     }
-    /* Serial.print("loop(): ");
+    Serial.print("loop(): ");
     Serial.print(timestamp);
     Serial.print(" ");
     Serial.print(angles[0]);
@@ -311,7 +317,7 @@ void loop() {
     Serial.print(" ");
     Serial.print(angles[2]);
     Serial.print(" ");
-    Serial.println(angles[3]); */       
+    Serial.println(angles[3]);       
   }
 
   while (1);
