@@ -17,7 +17,7 @@
 
 #define SERVO_DELAY     10    // lots of routines use longer delays but we'll be
                               // setting each servo going through a loop each time
-                              // (theerby setting each servo in the entire arm) so the
+                              // (thereby setting each servo in the entire arm) so the
                               // delay bewteen hitting the same servio will be > than
                               // 4X this value
 
@@ -28,7 +28,7 @@
 
 #define LOG_OPEN_SUCCESS 0
 #define LOG_OPEN_ERROR   -1
-#define LOG_FILE_NAME   "ARMS.txt"
+#define LOG_FILE_NAME   "arms.txt"
 
 #define READ_BUF_SIZE   50
 
@@ -208,22 +208,15 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
 
     //  skip carriage return
     if (*readPtr == '\r') {
-      continue;
+      continue;     // don't advance readPtr so '\r' will be overwritten
     }
 
     // newline ends the reading of the line
     if (*readPtr == '\n') {
+      *readPtr = '\0';    // terminate the read string
       break;
     }
     
-    if (*readPtr < '0' && *readPtr > '9' && *readPtr != ' ') {
-      char  buf[10];
-      Serial.print("<");
-      Serial.print(itoa(*readPtr, buf, 16));
-      Serial.print(">");
-    } else {
-      Serial.print(*readPtr);
-    }
     readPtr++;
   }
 
@@ -232,9 +225,7 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
       Serial.println("<EOF>");
     }
     return(READ_ERROR);
-    
   } else {
-    
     if (debugFlag) {
       Serial.print("Read line >");
       Serial.print(readBuf);
@@ -243,8 +234,6 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
   }
 
   // we've read a line - now break it down
-
-  // timestamp
 
   *timeStamp = atol(readBuf);
 
@@ -263,11 +252,13 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
   for (i = 0 ; i < numOfAngles ; i++) {
 
     // skip the just processed numeric value and the subsequent white space
-    Serial.print("1:"); Serial.println(readPtr);
-    while (isdigit(*readPtr++));
-    Serial.print("2:"); Serial.println(readPtr);
-    while (isspace(*readPtr++));
-    Serial.print("3:"); Serial.println(readPtr);
+    while (isdigit(*readPtr)) {
+      readPtr++;
+    }
+
+    while (isspace(*readPtr)) {
+      readPtr++;
+    }
 
     angles[i] = atoi(readPtr);
     
@@ -281,17 +272,46 @@ int readRecord(unsigned long *timeStamp, int angles[], int numOfAngles) {
 
 void loop() {
 
-  unsigned long timestamp, now;
-  int angles[NUM_OF_SERVOS];
+  unsigned long timestamp, currentTime, prevTime;
+  int i, angles[NUM_OF_SERVOS];
   
   // at this point the data file is open - process it line by line
   // extracting the data values:
   //
   // timestamp (in ms) & arms angles for all 4 joints (starting at "shoulder" (base end)
 
+  currentTime = 0;
+  
   while (readRecord(&timestamp, angles, NUM_OF_SERVOS)) {
-    now = millis();
-        
+
+    prevTime = timestamp;
+    
+    if ( ! currentTime) {
+      // first time through so delay until the read timestamp unless
+      // it's already passed
+      currentTime = millis();
+
+      if ((timestamp - currentTime) > 0) {
+        delay(timestamp - currentTime);   // wait until it's time
+      }
+    } else {
+      currentTime = millis();
+      delay(timestamp - currentTime);
+    }
+    
+    for (i = 0 ; i < NUM_OF_SERVOS ; i++) {
+      armServos[i].servo->write(MID_SERVO_POS - angles[i]);
+    }
+    /* Serial.print("loop(): ");
+    Serial.print(timestamp);
+    Serial.print(" ");
+    Serial.print(angles[0]);
+    Serial.print(" ");
+    Serial.print(angles[1]);
+    Serial.print(" ");
+    Serial.print(angles[2]);
+    Serial.print(" ");
+    Serial.println(angles[3]); */       
   }
 
   while (1);
